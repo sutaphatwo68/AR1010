@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR นักดับเพลิงพิชิตเปลวไฟ 🔥</title>
+    <!-- Google Fonts: Mitr -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        mitr: ['Mitr', 'sans-serif'],
+                    },
+                    colors: {
+                        fire: {
+                            500: '#ff4500',
+                            600: '#e03e00',
+                            700: '#c03500'
+                        },
+                        water: {
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- MediaPipe Hands & Camera Utils CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        * {
+            font-family: 'Mitr', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0d1117;
+            color: #ffffff;
+        }
+
+        /* Video background layer */
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror view for natural AR feel */
+            z-index: 1;
+        }
+
+        /* Canvas overlays */
+        #hand-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+            transform: scaleX(-1); /* Mirror to match video */
+        }
+
+        #three-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* Right Zone Barrier Indicator overlay */
+        .right-zone-border {
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 50%;
+            height: 100%;
+            border-left: 2px dashed rgba(56, 189, 248, 0.4);
+            background: linear-gradient(90deg, rgba(14, 165, 233, 0.03) 0%, rgba(14, 165, 233, 0.12) 100%);
+            z-index: 4;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+
+        /* Custom glowing animations */
+        @keyframes pulse-fire {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 15px rgba(255, 69, 0, 0.8)); }
+            50% { transform: scale(1.05); filter: drop-shadow(0 0 25px rgba(255, 140, 0, 1)); }
+        }
+
+        .animate-fire {
+            animation: pulse-fire 1.5s infinite;
+        }
+
+        /* Floating score popup animation */
+        @keyframes float-up {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-50px) scale(1.3); }
+        }
+
+        .score-popup {
+            position: absolute;
+            font-weight: 700;
+            font-size: 1.8rem;
+            pointer-events: none;
+            z-index: 50;
+            animation: float-up 0.8s ease-out forwards;
+        }
+
+        /* Custom scrollbars for modal */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden bg-slate-950 font-mitr">
+
+    <!-- Background Video Feed for AR -->
+    <video id="webcam" autoplay playsinline muted></video>
+
+    <!-- Hand Skeleton Tracking Canvas Overlay -->
+    <canvas id="hand-canvas"></canvas>
+
+    <!-- Three.js 3D WebGL Canvas Overlay -->
+    <canvas id="three-canvas"></canvas>
+
+    <!-- Player Right-Zone Visual Guide Overlay -->
+    <div id="player-zone-guide" class="right-zone-border flex flex-col justify-between p-4">
+        <div class="self-end bg-sky-950/70 border border-sky-500/40 backdrop-blur-md px-3 py-1 rounded-full text-xs text-sky-300 shadow-lg flex items-center gap-2">
+            <i class="fa-solid fa-hand text-sky-400"></i> โซนผู้เล่น (ฝั่งขวา)
+        </div>
+        <div class="text-right text-xs text-sky-200/60 pr-2">
+            ขอบเขตควบคุมอุปกรณ์ฉีดน้ำ 🌊
+        </div>
+    </div>
+
+    <!-- UI Overlay Layer (HUD & Modals) -->
+    <div id="ui-layer" class="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+        
+        <!-- Top HUD Bar -->
+        <header id="hud-bar" class="w-full flex justify-between items-center gap-2 max-w-5xl mx-auto transition-opacity duration-300 opacity-0">
+            <!-- Score Badge -->
+            <div class="bg-slate-900/80 border border-slate-700/80 backdrop-blur-md rounded-2xl px-4 py-2 flex items-center gap-3 shadow-xl pointer-events-auto">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 text-xl">
+                    <i class="fa-solid fa-trophy"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 font-medium">คะแนน</div>
+                    <div id="hud-score" class="text-2xl font-bold text-amber-300">0</div>
+                </div>
+            </div>
+
+            <!-- Timer Badge -->
+            <div class="bg-slate-900/80 border border-slate-700/80 backdrop-blur-md rounded-2xl px-5 py-2 flex items-center gap-3 shadow-xl pointer-events-auto">
+                <div class="w-10 h-10 rounded-xl bg-fire-500/20 border border-fire-500/50 flex items-center justify-center text-fire-400 text-xl">
+                    <i class="fa-solid fa-stopwatch"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 font-medium">เวลาเหลือ</div>
+                    <div id="hud-timer" class="text-2xl font-bold text-fire-400">60s</div>
+                </div>
+            </div>
+
+            <!-- Extinguished Count Badge -->
+            <div class="bg-slate-900/80 border border-slate-700/80 backdrop-blur-md rounded-2xl px-4 py-2 flex items-center gap-3 shadow-xl pointer-events-auto">
+                <div class="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/50 flex items-center justify-center text-sky-400 text-xl">
+                    <i class="fa-solid fa-fire-extinguisher"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-slate-400 font-medium">ดับไฟแล้ว</div>
+                    <div id="hud-extinguished" class="text-2xl font-bold text-sky-300">0 / 20</div>
+                </div>
+            </div>
+
+            <!-- Sound & Controls Toggle Button -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+                <button id="btn-sound-toggle" title="เปิด/ปิด เสียง" class="w-11 h-11 bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 rounded-2xl flex items-center justify-center text-slate-300 hover:text-white transition shadow-lg">
+                    <i class="fa-solid fa-volume-high text-lg" id="sound-icon"></i>
+                </button>
+                <button id="btn-camera-toggle" title="สลับโหมดควบคุม (กล้อง / เมาส์)" class="w-11 h-11 bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 rounded-2xl flex items-center justify-center text-slate-300 hover:text-white transition shadow-lg">
+                    <i class="fa-solid fa-video text-lg" id="camera-icon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Status / Tracking Banner -->
+        <div id="tracking-status" class="self-center bg-slate-900/90 border border-slate-700/70 backdrop-blur-md px-4 py-2 rounded-full text-xs md:text-sm text-slate-300 shadow-xl flex items-center gap-2 transition-opacity duration-300 opacity-0">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" id="status-dot"></span>
+            <span id="status-text">กำลังค้นหามือ... (วางมือขวาไว้ที่โซนขวา)</span>
+        </div>
+
+        <!-- Mouse / Touch Fallback Instructions Banner (visible when in Mouse Mode) -->
+        <div id="mouse-mode-hint" class="hidden self-center bg-sky-900/90 border border-sky-500/50 backdrop-blur-md px-4 py-2 rounded-full text-xs md:text-sm text-sky-200 shadow-xl flex items-center gap-2">
+            <i class="fa-solid fa-mouse text-sky-400"></i>
+            <span>โหมดควบคุมด้วยเมาส์: คลิกขวา/ซ้ายลากทิศทางสายฉีดน้ำ</span>
+        </div>
+
+        <!-- Bottom Status Space -->
+        <div class="w-full"></div>
+    </div>
+
+    <!-- START GAME MODAL SCREEN -->
+    <div id="start-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md transition-all duration-300">
+        <div class="max-w-xl w-full bg-slate-900/90 border border-slate-700/80 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden flex flex-col items-center text-center">
+            
+            <!-- Flame Decorative Background Glow -->
+            <div class="absolute -top-20 -left-20 w-48 h-48 bg-fire-500/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-20 -right-20 w-48 h-48 bg-sky-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <!-- Game Icon Badge -->
+            <div class="w-20 h-20 bg-gradient-to-tr from-fire-600 to-amber-500 rounded-2xl flex items-center justify-center text-4xl text-white shadow-lg shadow-fire-600/30 mb-4 animate-fire">
+                🔥
+            </div>
+
+            <!-- Title -->
+            <h1 class="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-fire-400 via-amber-300 to-sky-400 mb-2">
+                AR นักดับเพลิงพิชิตเปลวไฟ
+            </h1>
+            
+            <!-- Subtitle -->
+            <p class="text-slate-300 text-sm md:text-base font-normal mb-6">
+                ใช้มือควบคุมสายน้ำ แล้วดับไฟให้ได้มากที่สุด!
+            </p>
+
+            <!-- Mission Objective Box -->
+            <div class="w-full bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4 mb-6 text-left space-y-2">
+                <div class="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+                    <i class="fa-solid fa-bullseye text-base"></i> เป้าหมายภารกิจ:
+                </div>
+                <p class="text-slate-200 text-sm">
+                    🎯 ดับไฟให้ได้ <span class="text-amber-300 font-bold">20 จุด</span> ภายในเวลา <span class="text-fire-400 font-bold">60 วินาที</span>
+                </p>
+                <div class="text-xs text-slate-400 pt-1 border-t border-slate-700/50 flex items-center gap-1.5">
+                    <i class="fa-solid fa-shield-halved text-sky-400"></i> ระวัง! ฉีดน้ำใส่สิ่งของที่ไม่ใช่ไฟจะถูกหักคะแนน (-5 คะแนน)
+                </div>
+            </div>
+
+            <!-- Main Buttons -->
+            <div class="flex flex-col sm:flex-row gap-3 w-full">
+                <button id="btn-start" class="flex-1 bg-gradient-to-r from-fire-600 via-amber-600 to-fire-500 hover:from-fire-500 hover:to-amber-500 text-white font-bold py-3.5 px-6 rounded-2xl shadow-xl shadow-fire-600/30 hover:scale-[1.02] active:scale-[0.98] transition flex items-center justify-center gap-2 text-lg">
+                    <i class="fa-solid fa-fire-burner"></i> เริ่มภารกิจ
+                </button>
+                <button id="btn-how-to" class="bg-slate-800 hover:bg-slate-700 border border-slate-600/80 text-slate-200 font-semibold py-3.5 px-6 rounded-2xl hover:scale-[1.02] active:scale-[0.98] transition flex items-center justify-center gap-2 text-base">
+                    <i class="fa-solid fa-circle-question"></i> วิธีเล่น
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HOW TO PLAY MODAL SCREEN -->
+    <div id="howto-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md transition-all duration-300 hidden">
+        <div class="max-w-lg w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+                <h2 class="text-xl font-bold text-amber-400 flex items-center gap-2">
+                    <i class="fa-solid fa-book-open"></i> วิธีการเล่นเกม
+                </h2>
+                <button id="btn-close-howto" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="overflow-y-auto space-y-4 pr-1 text-sm text-slate-300 leading-relaxed">
+                <!-- Instruction 1 -->
+                <div class="bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex-shrink-0 flex items-center justify-center font-bold text-lg">
+                        ✋
+                    </div>
+                    <div>
+                        <div class="font-bold text-white mb-0.5">1. มือขวา - วางตำแหน่งสายฉีดน้ำ</div>
+                        <p class="text-xs text-slate-300">ใช้มือขวาควบคุมตำแหน่งของหัวฉีดน้ำ โดยจะจำกัดพื้นที่เฉพาะโซนฝั่งขวาของหน้าจอ หากเคลื่อนมือเลยขอบเขต อุปกรณ์จะถูกล็อกที่ขอบ</p>
+                    </div>
+                </div>
+
+                <!-- Instruction 2 -->
+                <div class="bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex-shrink-0 flex items-center justify-center font-bold text-lg">
+                        🖐️
+                    </div>
+                    <div>
+                        <div class="font-bold text-white mb-0.5">2. มือซ้าย - บังคับทิศทางและเล็งฉีดน้ำ</div>
+                        <p class="text-xs text-slate-300">ใช้มือซ้ายเล็งชี้ไปทางเปลวไฟ เพื่อปรับองศาการพ่นน้ำ สายฉีดจะพ่นแรงน้ำพุ่งไปตามทิศทางที่คุณเล็ง</p>
+                    </div>
+                </div>
+
+                <!-- Instruction 3 -->
+                <div class="bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-fire-500/20 text-fire-400 flex-shrink-0 flex items-center justify-center font-bold text-lg">
+                        🔥
+                    </div>
+                    <div>
+                        <div class="font-bold text-white mb-0.5">3. ดับไฟเพื่อเก็บคะแนน</div>
+                        <p class="text-xs text-slate-300">ฉีดน้ำใส่เปลวไฟอย่างต่อเนื่อง ไฟจะค่อยๆ หดเล็กลงจนดับสนิท เมื่อดับไฟสำเร็จจะได้รับ <span class="text-amber-300 font-bold">+10 คะแนน</span> ไฟบางจุดอาจเคลื่อนที่ได้!</p>
+                    </div>
+                </div>
+
+                <!-- Instruction 4 -->
+                <div class="bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex-shrink-0 flex items-center justify-center font-bold text-lg">
+                        🚫
+                    </div>
+                    <div>
+                        <div class="font-bold text-white mb-0.5">4. หลีกเลี่ยงเป้าหมายที่ไม่ใช่ไฟ</div>
+                        <p class="text-xs text-slate-300">ห้ามฉีดน้ำใส่สิ่งของ สัตว์เลี้ยง หรือเป้าหมายจำลองอื่นๆ หากฉีดโดนจะโดนหัก <span class="text-red-400 font-bold">-5 คะแนน</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-5 pt-3 border-t border-slate-800 text-center">
+                <button id="btn-understood" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-2xl transition">
+                    เข้าใจแล้ว เริ่มเล่นกันเลย!
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME OVER MODAL SCREEN -->
+    <div id="gameover-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md transition-all duration-300 hidden">
+        <div class="max-w-md w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 md:p-8 shadow-2xl relative text-center">
+            
+            <!-- Result Trophy/Badge -->
+            <div id="result-icon-bg" class="w-20 h-20 mx-auto bg-amber-500/20 border border-amber-500/40 rounded-2xl flex items-center justify-center text-4xl mb-3">
+                🏆
+            </div>
+
+            <h2 id="result-title" class="text-2xl md:text-3xl font-extrabold text-amber-300 mb-1">
+                ภารกิจเสร็จสิ้น!
+            </h2>
+            <p id="result-subtitle" class="text-slate-400 text-xs md:text-sm mb-6">
+                ยอดเยี่ยมมาก! คุณทำงานหนักเพื่อปกป้องเมือง
+            </p>
+
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <!-- Final Score -->
+                <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-3 text-center">
+                    <div class="text-xs text-slate-400 mb-1">คะแนนรวม</div>
+                    <div id="res-score" class="text-2xl font-bold text-amber-300">0</div>
+                </div>
+
+                <!-- High Score -->
+                <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-3 text-center">
+                    <div class="text-xs text-slate-400 mb-1">คะแนนสูงสุด</div>
+                    <div id="res-highscore" class="text-2xl font-bold text-purple-300">0</div>
+                </div>
+
+                <!-- Extinguished Fires -->
+                <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-3 text-center">
+                    <div class="text-xs text-slate-400 mb-1">ไฟที่ดับได้</div>
+                    <div id="res-fires" class="text-2xl font-bold text-sky-400">0</div>
+                </div>
+
+                <!-- Target Met Status -->
+                <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-3 text-center flex flex-col justify-center items-center">
+                    <div class="text-xs text-slate-400 mb-1">สถานะเป้าหมาย</div>
+                    <div id="res-status" class="text-sm font-bold text-emerald-400">ผ่านเป้าหมาย 🎉</div>
+                </div>
+            </div>
+
+            <!-- Restart Button -->
+            <button id="btn-restart" class="w-full bg-gradient-to-r from-fire-600 via-amber-600 to-fire-500 hover:from-fire-500 hover:to-amber-500 text-white font-bold py-3.5 px-6 rounded-2xl shadow-xl shadow-fire-600/30 hover:scale-[1.02] active:scale-[0.98] transition flex items-center justify-center gap-2 text-lg">
+                <i class="fa-solid fa-rotate-right"></i> เล่นอีกครั้ง
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* WEB AUDIO API SYNTHESIZER SOUND SYSTEM */
+        class SoundManager {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+                this.sprayOsc = null;
+                this.sprayGain = null;
+                this.sprayNoiseNode = null;
+                this.isSprayingSound = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            toggleSound() {
+                this.enabled = !this.enabled;
+                if (!this.enabled && this.isSprayingSound) {
+                    this.stopWaterSpray();
+                }
+                return this.enabled;
+            }
+
+            // Synthesize water spray sound using white noise and bandpass filter
+            startWaterSpray() {
+                if (!this.enabled || this.isSprayingSound) return;
+                this.init();
+                this.isSprayingSound = true;
+
+                const bufferSize = this.ctx.sampleRate * 2;
+                const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 2 - 1;
+                }
+
+                this.sprayNoiseNode = this.ctx.createBufferSource();
+                this.sprayNoiseNode.buffer = noiseBuffer;
+                this.sprayNoiseNode.loop = true;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(1200, this.ctx.currentTime);
+                filter.Q.setValueAtTime(1.5, this.ctx.currentTime);
+
+                this.sprayGain = this.ctx.createGain();
+                this.sprayGain.gain.setValueAtTime(0.01, this.ctx.currentTime);
+                this.sprayGain.gain.exponentialRampToValueAtTime(0.25, this.ctx.currentTime + 0.1);
+
+                this.sprayNoiseNode.connect(filter);
+                filter.connect(this.sprayGain);
+                this.sprayGain.connect(this.ctx.destination);
+
+                this.sprayNoiseNode.start();
+            }
+
+            stopWaterSpray() {
+                if (!this.isSprayingSound) return;
+                if (this.sprayGain && this.ctx) {
+                    try {
+                        this.sprayGain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.1);
+                        setTimeout(() => {
+                            if (this.sprayNoiseNode) {
+                                this.sprayNoiseNode.stop();
+                                this.sprayNoiseNode.disconnect();
+                            }
+                            this.isSprayingSound = false;
+                        }, 100);
+                    } catch (e) {
+                        this.isSprayingSound = false;
+                    }
+                } else {
+                    this.isSprayingSound = false;
+                }
+            }
+
+            // Play sizzle sound when water hits fire
+            playSizzle() {
+                if (!this.enabled) return;
+                this.init();
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800 + Math.random() * 400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.15);
+
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            // Play score chime (+10 points)
+            playScoreSound() {
+                if (!this.enabled) return;
+                this.init();
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, now); // C5
+                osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+                osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.35);
+            }
+
+            // Play penalty buzz (-5 points)
+            playPenaltySound() {
+                if (!this.enabled) return;
+                this.init();
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(160, now);
+                osc.frequency.setValueAtTime(120, now + 0.12);
+
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(now + 0.28);
+            }
+
+            // Play Game Start Fanfare
+            playStartSound() {
+                if (!this.enabled) return;
+                this.init();
+
+                const now = this.ctx.currentTime;
+                const notes = [261.63, 329.63, 392.00, 523.25];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                    gain.gain.setValueAtTime(0.18, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.25);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 0.25);
+                });
+            }
+
+            // Play Game Over Sound
+            playGameOverSound() {
+                if (!this.enabled) return;
+                this.init();
+
+                const now = this.ctx.currentTime;
+                const notes = [440, 415.30, 392, 349.23];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.15);
+                    gain.gain.setValueAtTime(0.2, now + idx * 0.15);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.15 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.15);
+                    osc.stop(now + idx * 0.15 + 0.3);
+                });
+            }
+        }
+
+        const sound = new SoundManager();
+    </script>
+
+    <script>
+        /* GAME STATE VARIABLES */
+        const GAME_DURATION = 60; // 60 seconds
+        const TARGET_FIRE_GOAL = 20;
+
+        let gameState = {
+            isPlaying: false,
+            score: 0,
+            highScore: localStorage.getItem('ar_firefighter_highscore') || 0,
+            timer: GAME_DURATION,
+            extinguishedCount: 0,
+            timerInterval: null,
+            controlMode: 'camera', // 'camera' or 'mouse'
+        };
+
+        // DOM elements
+        const hudBar = document.getElementById('hud-bar');
+        const hudScore = document.getElementById('hud-score');
+        const hudTimer = document.getElementById('hud-timer');
+        const hudExtinguished = document.getElementById('hud-extinguished');
+        const trackingStatus = document.getElementById('tracking-status');
+        const statusText = document.getElementById('status-text');
+        const statusDot = document.getElementById('status-dot');
+        const mouseModeHint = document.getElementById('mouse-mode-hint');
+
+        const startModal = document.getElementById('start-modal');
+        const howtoModal = document.getElementById('howto-modal');
+        const gameoverModal = document.getElementById('gameover-modal');
+
+        const btnStart = document.getElementById('btn-start');
+        const btnHowTo = document.getElementById('btn-how-to');
+        const btnCloseHowTo = document.getElementById('btn-close-howto');
+        const btnUnderstood = document.getElementById('btn-understood');
+        const btnRestart = document.getElementById('btn-restart');
+        const btnSoundToggle = document.getElementById('btn-sound-toggle');
+        const btnCameraToggle = document.getElementById('btn-camera-toggle');
+
+        /* THREE.JS SCENE SETUP */
+        const containerCanvas = document.getElementById('three-canvas');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 5);
+
+        const renderer = new THREE.WebGLRenderer({ canvas: containerCanvas, alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffaa00, 1.2);
+        dirLight.position.set(5, 10, 7);
+        scene.add(dirLight);
+
+        // Resize Handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            if (handCanvas) {
+                handCanvas.width = window.innerWidth;
+                handCanvas.height = window.innerHeight;
+            }
+        });
+
+        /* 3D HOSE NOZZLE MODEL (Rendered in Right Player Zone) */
+        function createNozzleMesh() {
+            const group = new THREE.Group();
+
+            // Main metallic pipe
+            const pipeGeo = new THREE.CylinderGeometry(0.12, 0.18, 1.2, 16);
+            const metalMat = new THREE.MeshStandardMaterial({
+                color: 0xc0c0c0,
+                metalness: 0.9,
+                roughness: 0.2
+            });
+            const pipe = new THREE.Mesh(pipeGeo, metalMat);
+            pipe.rotation.x = Math.PI / 2;
+            group.add(pipe);
+
+            // Red Fire Hose Body Segment
+            const bodyGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 16);
+            const redMat = new THREE.MeshStandardMaterial({
+                color: 0xcc0000,
+                roughness: 0.4
+            });
+            const body = new THREE.Mesh(bodyGeo, redMat);
+            body.rotation.x = Math.PI / 2;
+            body.position.z = 0.5;
+            group.add(body);
+
+            // Brass nozzle tip
+            const tipGeo = new THREE.CylinderGeometry(0.08, 0.14, 0.3, 16);
+            const brassMat = new THREE.MeshStandardMaterial({
+                color: 0xd4af37,
+                metalness: 0.8,
+                roughness: 0.3
+            });
+            const tip = new THREE.Mesh(tipGeo, brassMat);
+            tip.rotation.x = Math.PI / 2;
+            tip.position.z = -0.7;
+            group.add(tip);
+
+            // Tip Point marker offset
+            group.tipOffset = new THREE.Vector3(0, 0, -0.85);
+
+            return group;
+        }
+
+        const nozzleMesh = createNozzleMesh();
+        scene.add(nozzleMesh);
+        // Default Nozzle Position in right zone
+        nozzleMesh.position.set(1.8, -1.2, 2.5);
+
+        /* WATER SPRAY PARTICLE SYSTEM */
+        const MAX_WATER_PARTICLES = 250;
+        const waterParticles = [];
+        const waterGroup = new THREE.Group();
+        scene.add(waterGroup);
+
+        const waterGeo = new THREE.SphereGeometry(0.06, 8, 8);
+        const waterMat = new THREE.MeshBasicMaterial({
+            color: 0x60a5fa,
+            transparent: true,
+            opacity: 0.75
+        });
+
+        for (let i = 0; i < MAX_WATER_PARTICLES; i++) {
+            const p = new THREE.Mesh(waterGeo, waterMat);
+            p.visible = false;
+            p.userData = {
+                active: false,
+                velocity: new THREE.Vector3(),
+                life: 0,
+                maxLife: 1.0
+            };
+            waterGroup.add(p);
+            waterParticles.push(p);
+        }
+
+        // Emit Water Particle
+        function emitWaterParticle(origin, direction) {
+            const p = waterParticles.find(item => !item.userData.active);
+            if (!p) return;
+
+            p.visible = true;
+            p.userData.active = true;
+            p.position.copy(origin);
+            
+            // Add slight spray dispersion
+            const spread = 0.08;
+            const dir = direction.clone().add(new THREE.Vector3(
+                (Math.random() - 0.5) * spread,
+                (Math.random() - 0.5) * spread,
+                (Math.random() - 0.5) * spread
+            )).normalize();
+
+            const speed = 10 + Math.random() * 2;
+            p.userData.velocity.copy(dir.multiplyScalar(speed));
+            p.userData.life = 0;
+            p.userData.maxLife = 0.6 + Math.random() * 0.2;
+            p.scale.setScalar(0.8 + Math.random() * 0.6);
+        }
+
+        /* FIRE & NON-FIRE TARGET ENTITIES MANAGEMENT */
+        const activeTargets = [];
+
+        // Create 3D Flame Object
+        function createFireTarget(x, y, z, isMoving = false) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+
+            // Core Fire Mesh (Inner yellow glow, outer orange flame)
+            const flameGeo = new THREE.ConeGeometry(0.4, 1.0, 12);
+            const outerMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.9 });
+            const outerFlame = new THREE.Mesh(flameGeo, outerMat);
+            outerFlame.position.y = 0.5;
+            group.add(outerFlame);
+
+            const innerGeo = new THREE.ConeGeometry(0.25, 0.7, 10);
+            const innerMat = new THREE.MeshBasicMaterial({ color: 0xffe100, transparent: true, opacity: 0.95 });
+            const innerFlame = new THREE.Mesh(innerGeo, innerMat);
+            innerFlame.position.y = 0.35;
+            group.add(innerFlame);
+
+            // Light source for flame glow
+            const fireLight = new THREE.PointLight(0xff6600, 2, 4);
+            fireLight.position.y = 0.5;
+            group.add(fireLight);
+
+            group.userData = {
+                type: 'fire',
+                hp: 100,
+                maxHp: 100,
+                isMoving: isMoving,
+                moveSpeed: 0.015,
+                dirX: Math.random() > 0.5 ? 1 : -1,
+                dirY: Math.random() > 0.5 ? 0.5 : -0.5,
+                outerFlame: outerFlame,
+                innerFlame: innerFlame,
+                light: fireLight,
+                timeOffset: Math.random() * 10
+            };
+
+            scene.add(group);
+            activeTargets.push(group);
+            return group;
+        }
+
+        // Create Non-Fire Target (Wrong Target: Cute Box/Pet)
+        function createWrongTarget(x, y, z) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+
+            // Cute Box Container
+            const boxGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+            const boxMat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.5 });
+            const box = new THREE.Mesh(boxGeo, boxMat);
+            box.position.y = 0.3;
+            group.add(box);
+
+            // Warning Icon Canvas Texture overlay
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.arc(64, 64, 50, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 50px Mitr';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('📦', 64, 64);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(0.7, 0.7, 1);
+            sprite.position.y = 0.8;
+            group.add(sprite);
+
+            group.userData = {
+                type: 'wrong',
+                hp: 1,
+                timeOffset: Math.random() * 10,
+                hitCooldown: 0
+            };
+
+            scene.add(group);
+            activeTargets.push(group);
+            return group;
+        }
+
+        // Spawn Manager
+        function spawnNewTargets() {
+            // Remove existing
+            activeTargets.forEach(t => scene.remove(t));
+            activeTargets.length = 0;
+
+            // Spawn 3 to 4 flames in center and left region (X between -2.2 and 0.2)
+            const count = 3 + Math.floor(Math.random() * 2);
+            for (let i = 0; i < count; i++) {
+                const x = -2.0 + Math.random() * 2.2; // Left/center zone
+                const y = -0.8 + Math.random() * 1.8;
+                const z = 0 + (Math.random() - 0.5) * 1.5;
+                const isMoving = Math.random() > 0.5;
+                createFireTarget(x, y, z, isMoving);
+            }
+
+            // 40% chance to spawn 1 wrong target (box/pet)
+            if (Math.random() < 0.45) {
+                const x = -1.8 + Math.random() * 1.8;
+                const y = -0.5 + Math.random() * 1.2;
+                const z = 0.2;
+                createWrongTarget(x, y, z);
+            }
+        }
+
+        // Show floating text popup on screen
+        function showScorePopup(text, isPositive, x2d, y2d) {
+            const popup = document.createElement('div');
+            popup.className = `score-popup ${isPositive ? 'text-amber-300' : 'text-red-400'}`;
+            popup.innerText = text;
+            popup.style.left = `${x2d}px`;
+            popup.style.top = `${y2d}px`;
+            document.body.appendChild(popup);
+            setTimeout(() => popup.remove(), 800);
+        }
+
+        /* MEDIAPIPE HANDS & AR CONTROL LOGIC */
+        const videoElement = document.getElementById('webcam');
+        const handCanvas = document.getElementById('hand-canvas');
+        const handCtx = handCanvas.getContext('2d');
+
+        handCanvas.width = window.innerWidth;
+        handCanvas.height = window.innerHeight;
+
+        // Player Control Vectors
+        let rightHandPos = { x: window.innerWidth * 0.75, y: window.innerHeight * 0.6 }; // Default screen pixels
+        let leftHandPos = { x: window.innerWidth * 0.25, y: window.innerHeight * 0.5 };
+        let isRightHandTracked = false;
+        let isLeftHandTracked = false;
+        let isSpraying = false;
+
+        // Mouse Fallback Position
+        let mousePos = { x: window.innerWidth * 0.75, y: window.innerHeight * 0.6 };
+        let mouseTargetPos = { x: window.innerWidth * 0.3, y: window.innerHeight * 0.5 };
+        let isMouseDown = false;
+
+        window.addEventListener('mousemove', (e) => {
+            if (gameState.controlMode === 'mouse') {
+                mouseTargetPos.x = e.clientX;
+                mouseTargetPos.y = e.clientY;
+            }
+        });
+
+        window.addEventListener('mousedown', (e) => {
+            if (gameState.controlMode === 'mouse' && gameState.isPlaying) {
+                isMouseDown = true;
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isMouseDown = false;
+        });
+
+        // Initialize MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onHandResults);
+
+        function onHandResults(results) {
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
+            isRightHandTracked = false;
+            isLeftHandTracked = false;
+
+            if (results.multiHandLandmarks && results.multiHandedness) {
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const landmarks = results.multiHandLandmarks[i];
+                    const handedness = results.multiHandedness[i].label; // 'Left' or 'Right' (MediaPipe mirror label)
+
+                    // Draw hand skeleton lines
+                    drawHandSkeleton(landmarks, handedness === 'Right' ? '#38bdf8' : '#f59e0b');
+
+                    // Landmark 9 = Middle finger MCP (palm center approximation)
+                    const palmX = landmarks[9].x * handCanvas.width;
+                    const palmY = landmarks[9].y * handCanvas.height;
+
+                    // Note: Video is mirrored horizontally, so handedness labeling is inverted for mirrored camera
+                    if (handedness === 'Left') { 
+                        // Represents Player's Right Hand in mirrored webcam
+                        isRightHandTracked = true;
+
+                        // ENFORCE RIGHT HALF ZONE BOUNDARY (Width >= 0.5 * canvasWidth)
+                        const minAllowedX = handCanvas.width * 0.5;
+                        rightHandPos.x = Math.max(palmX, minAllowedX);
+                        rightHandPos.y = palmY;
+
+                        // Highlight Nozzle Anchor on hand canvas
+                        handCtx.beginPath();
+                        handCtx.arc(rightHandPos.x, rightHandPos.y, 20, 0, Math.PI * 2);
+                        handCtx.fillStyle = 'rgba(56, 189, 248, 0.4)';
+                        handCtx.strokeStyle = '#38bdf8';
+                        handCtx.lineWidth = 3;
+                        handCtx.fill();
+                        handCtx.stroke();
+
+                    } else if (handedness === 'Right') {
+                        // Represents Player's Left Hand in mirrored webcam
+                        isLeftHandTracked = true;
+                        leftHandPos.x = palmX;
+                        leftHandPos.y = palmY;
+
+                        // Highlight Aim Controller on hand canvas
+                        handCtx.beginPath();
+                        handCtx.arc(leftHandPos.x, leftHandPos.y, 20, 0, Math.PI * 2);
+                        handCtx.fillStyle = 'rgba(245, 158, 11, 0.4)';
+                        handCtx.strokeStyle = '#f59e0b';
+                        handCtx.lineWidth = 3;
+                        handCtx.fill();
+                        handCtx.stroke();
+                    }
+                }
+            }
+
+            // Update HUD Tracking Status Badge
+            if (gameState.controlMode === 'camera') {
+                if (isRightHandTracked && isLeftHandTracked) {
+                    statusText.innerText = "ตรวจพบมือทั้งสองข้าง: กำลังเล็งพ่นน้ำ! 🌊";
+                    statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping";
+                    isSpraying = true;
+                } else if (isRightHandTracked) {
+                    statusText.innerText = "พบมือขวา (ควบคุมตำแหน่ง): ยกมือซ้ายขึ้นเพื่อเล็งและพ่นน้ำ 🖐️";
+                    statusDot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse";
+                    isSpraying = false;
+                } else {
+                    statusText.innerText = "กำลังมองหามือ... (ชูมือขวาในฝั่งขวาของจอ)";
+                    statusDot.className = "w-2.5 h-2.5 rounded-full bg-fire-500 animate-pulse";
+                    isSpraying = false;
+                }
+            }
+        }
+
+        // Draw Skeleton Lines for Visual Feedback
+        function drawHandSkeleton(landmarks, color) {
+            handCtx.strokeStyle = color;
+            handCtx.lineWidth = 3;
+            const connections = [
+                [0,1],[1,2],[2,3],[3,4],
+                [0,5],[5,6],[6,7],[7,8],
+                [5,9],[9,10],[10,11],[11,12],
+                [9,13],[13,14],[14,15],[15,16],
+                [13,17],[17,18],[18,19],[19,20],[0,17]
+            ];
+            connections.forEach(([i, j]) => {
+                const x1 = landmarks[i].x * handCanvas.width;
+                const y1 = landmarks[i].y * handCanvas.height;
+                const x2 = landmarks[j].x * handCanvas.width;
+                const y2 = landmarks[j].y * handCanvas.height;
+                handCtx.beginPath();
+                handCtx.moveTo(x1, y1);
+                handCtx.lineTo(x2, y2);
+                handCtx.stroke();
+            });
+        }
+
+        // Camera Feed Initialization
+        let cameraUtils = null;
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 1280, height: 720, facingMode: 'user' },
+                    audio: false
+                });
+                videoElement.srcObject = stream;
+                cameraUtils = new Camera(videoElement, {
+                    onFrame: async () => {
+                        if (gameState.controlMode === 'camera') {
+                            await hands.send({ image: videoElement });
+                        }
+                    },
+                    width: 1280,
+                    height: 720
+                });
+                cameraUtils.start();
+            } catch (err) {
+                console.warn("Webcam access failed or denied. Falling back to Mouse Control mode.", err);
+                switchControlMode('mouse');
+            }
+        }
+
+        function switchControlMode(mode) {
+            gameState.controlMode = mode;
+            if (mode === 'mouse') {
+                trackingStatus.classList.add('hidden');
+                mouseModeHint.classList.remove('hidden');
+                document.getElementById('camera-icon').className = 'fa-solid fa-hand text-lg';
+            } else {
+                trackingStatus.classList.remove('hidden');
+                mouseModeHint.classList.add('hidden');
+                document.getElementById('camera-icon').className = 'fa-solid fa-video text-lg';
+            }
+        }
+
+        /* MAIN GAME LOOP & UPDATES */
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            if (gameState.isPlaying) {
+                updateHoseAndSpray(delta);
+                updateWaterParticles(delta);
+                updateTargets(delta, time);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Convert Screen Coordinates (px) to 3D World Space coordinates
+        function screenToWorld(screenX, screenY, depthZ = 2.5) {
+            const vec = new THREE.Vector3(
+                (screenX / window.innerWidth) * 2 - 1,
+                -(screenY / window.innerHeight) * 2 + 1,
+                0.5
+            );
+            vec.unproject(camera);
+            const dir = vec.sub(camera.position).normalize();
+            const distance = (depthZ - camera.position.z) / dir.z;
+            return camera.position.clone().add(dir.multiplyScalar(distance));
+        }
+
+        // Update Nozzle Position and Aiming Direction
+        function updateHoseAndSpray(delta) {
+            let nozzleTargetWorld = new THREE.Vector3();
+            let aimTargetWorld = new THREE.Vector3();
+
+            if (gameState.controlMode === 'camera') {
+                if (isRightHandTracked) {
+                    // Convert right hand position (mirrored) to world
+                    // Since handCanvas is mirrored scaleX(-1), convert screenX -> window.innerWidth - rightHandPos.x
+                    const realX = window.innerWidth - rightHandPos.x;
+                    nozzleTargetWorld = screenToWorld(realX, rightHandPos.y, 2.2);
+                } else {
+                    // Default fallback right zone nozzle location
+                    nozzleTargetWorld.set(1.8, -1.2, 2.2);
+                }
+
+                if (isLeftHandTracked) {
+                    const realLeftX = window.innerWidth - leftHandPos.x;
+                    aimTargetWorld = screenToWorld(realLeftX, leftHandPos.y, 0.0);
+                } else {
+                    aimTargetWorld.set(-0.5, 0, 0); // Default pointing left
+                }
+            } else {
+                // Mouse Control Mode
+                const realMouseX = mouseTargetPos.x;
+                const realMouseY = mouseTargetPos.y;
+                nozzleTargetWorld.set(1.8, -1.0, 2.2);
+                aimTargetWorld = screenToWorld(realMouseX, realMouseY, 0.0);
+                isSpraying = isMouseDown;
+            }
+
+            // Smoothly lerp nozzle position
+            nozzleMesh.position.lerp(nozzleTargetWorld, 0.2);
+
+            // Calculate Aim direction vector from Nozzle Tip to Aim Target
+            const nozzleTipPos = nozzleMesh.position.clone().add(nozzleMesh.tipOffset);
+            const aimDir = aimTargetWorld.clone().sub(nozzleTipPos).normalize();
+
+            // Orient nozzle mesh towards aim target
+            const lookAtPoint = nozzleMesh.position.clone().add(aimDir);
+            nozzleMesh.lookAt(lookAtPoint);
+
+            // Handle Spraying Logic & Audio
+            if (isSpraying) {
+                sound.startWaterSpray();
+                // Emit 2 particles per frame
+                emitWaterParticle(nozzleTipPos, aimDir);
+                emitWaterParticle(nozzleTipPos, aimDir);
+            } else {
+                sound.stopWaterSpray();
+            }
+        }
+
+        // Update Physics & Collisions for Water Particles
+        function updateWaterParticles(delta) {
+            waterParticles.forEach(p => {
+                if (!p.userData.active) return;
+
+                p.userData.life += delta;
+                if (p.userData.life >= p.userData.maxLife) {
+                    p.userData.active = false;
+                    p.visible = false;
+                    return;
+                }
+
+                // Move particle
+                p.position.addScaledVector(p.userData.velocity, delta);
+
+                // Collision detection with Active Targets
+                activeTargets.forEach(target => {
+                    const dist = p.position.distanceTo(target.position);
+                    
+                    if (target.userData.type === 'fire' && dist < 0.7) {
+                        // Water hit fire!
+                        target.userData.hp -= 3.5; // Reduce HP
+                        sound.playSizzle();
+
+                        // Shrink flame size proportional to remaining HP
+                        const scale = Math.max(0.1, target.userData.hp / target.userData.maxHp);
+                        target.userData.outerFlame.scale.set(scale, scale, scale);
+                        target.userData.innerFlame.scale.set(scale, scale, scale);
+                        target.userData.light.intensity = scale * 2;
+
+                        // Deactivate particle on hit
+                        p.userData.active = false;
+                        p.visible = false;
+
+                        // Check Extinguished condition
+                        if (target.userData.hp <= 0 && !target.userData.extinguished) {
+                            target.userData.extinguished = true;
+                            onFireExtinguished(target);
+                        }
+                    } else if (target.userData.type === 'wrong' && dist < 0.6) {
+                        // Hit Wrong Target Penalty
+                        if (target.userData.hitCooldown <= 0) {
+                            target.userData.hitCooldown = 0.5; // Cooldown to avoid rapid duplicate penalties
+                            onWrongTargetHit(target);
+                        }
+                        p.userData.active = false;
+                        p.visible = false;
+                    }
+                });
+            });
+        }
+
+        // Update Target Animations and Movements
+        function updateTargets(delta, time) {
+            activeTargets.forEach(target => {
+                if (target.userData.type === 'wrong') {
+                    if (target.userData.hitCooldown > 0) {
+                        target.userData.hitCooldown -= delta;
+                    }
+                    // Floating wobble
+                    target.position.y += Math.sin(time * 3 + target.userData.timeOffset) * 0.002;
+                } else if (target.userData.type === 'fire') {
+                    // Flame pulse oscillation
+                    const pulse = 1 + Math.sin(time * 8 + target.userData.timeOffset) * 0.08;
+                    target.userData.outerFlame.scale.x = pulse * (target.userData.hp / target.userData.maxHp);
+
+                    // Moving fires
+                    if (target.userData.isMoving) {
+                        target.position.x += target.userData.dirX * target.userData.moveSpeed;
+                        target.position.y += target.userData.dirY * target.userData.moveSpeed;
+
+                        // Bounce at boundaries
+                        if (target.position.x < -2.2 || target.position.x > 0.2) target.userData.dirX *= -1;
+                        if (target.position.y < -1.0 || target.position.y > 1.2) target.userData.dirY *= -1;
+                    }
+                }
+            });
+        }
+
+        /* GAME LOGIC & EVENT HANDLERS */
+        function onFireExtinguished(target) {
+            scene.remove(target);
+            const index = activeTargets.indexOf(target);
+            if (index > -1) activeTargets.splice(index, 1);
+
+            // Add Points (+10)
+            gameState.score += 10;
+            gameState.extinguishedCount += 1;
+            hudScore.innerText = gameState.score;
+            hudExtinguished.innerText = `${gameState.extinguishedCount} / ${TARGET_FIRE_GOAL}`;
+
+            sound.playScoreSound();
+
+            // Project 3D position to 2D Screen for score popup
+            const proj = target.position.clone().project(camera);
+            const x2d = (proj.x * .5 + .5) * window.innerWidth;
+            const y2d = (-(proj.y * .5) + .5) * window.innerHeight;
+            showScorePopup('+10 🔥', true, x2d, y2d);
+
+            // Respawn new set if all fires cleared
+            const remainingFires = activeTargets.filter(t => t.userData.type === 'fire');
+            if (remainingFires.length === 0) {
+                spawnNewTargets();
+            }
+        }
+
+        function onWrongTargetHit(target) {
+            gameState.score = Math.max(0, gameState.score - 5);
+            hudScore.innerText = gameState.score;
+            sound.playPenaltySound();
+
+            const proj = target.position.clone().project(camera);
+            const x2d = (proj.x * .5 + .5) * window.innerWidth;
+            const y2d = (-(proj.y * .5) + .5) * window.innerHeight;
+            showScorePopup('-5 📦', false, x2d, y2d);
+        }
+
+        function startGame() {
+            gameState.isPlaying = true;
+            gameState.score = 0;
+            gameState.extinguishedCount = 0;
+            gameState.timer = GAME_DURATION;
+
+            hudScore.innerText = '0';
+            hudTimer.innerText = `${GAME_DURATION}s`;
+            hudExtinguished.innerText = `0 / ${TARGET_FIRE_GOAL}`;
+
+            startModal.classList.add('hidden');
+            gameoverModal.classList.add('hidden');
+            hudBar.classList.remove('opacity-0');
+            trackingStatus.classList.remove('opacity-0');
+
+            sound.playStartSound();
+            spawnNewTargets();
+
+            // Timer Loop
+            clearInterval(gameState.timerInterval);
+            gameState.timerInterval = setInterval(() => {
+                gameState.timer -= 1;
+                hudTimer.innerText = `${gameState.timer}s`;
+
+                if (gameState.timer <= 10) {
+                    hudTimer.classList.add('animate-ping', 'text-red-500');
+                } else {
+                    hudTimer.classList.remove('animate-ping', 'text-red-500');
+                }
+
+                if (gameState.timer <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function endGame() {
+            gameState.isPlaying = false;
+            clearInterval(gameState.timerInterval);
+            sound.stopWaterSpray();
+            sound.playGameOverSound();
+
+            // Save High Score
+            if (gameState.score > gameState.highScore) {
+                gameState.highScore = gameState.score;
+                localStorage.setItem('ar_firefighter_highscore', gameState.highScore);
+            }
+
+            // Populate Results Modal
+            document.getElementById('res-score').innerText = gameState.score;
+            document.getElementById('res-highscore').innerText = gameState.highScore;
+            document.getElementById('res-fires').innerText = gameState.extinguishedCount;
+
+            const resStatus = document.getElementById('res-status');
+            const resTitle = document.getElementById('result-title');
+            const resIconBg = document.getElementById('result-icon-bg');
+
+            if (gameState.extinguishedCount >= TARGET_FIRE_GOAL) {
+                resTitle.innerText = "ภารกิจสำเร็จลุล่วง! 🎉";
+                resStatus.innerText = "ผ่านเป้าหมาย ⭐";
+                resStatus.className = "text-sm font-bold text-emerald-400";
+                resIconBg.innerHTML = "🏆";
+            } else {
+                resTitle.innerText = "หมดเวลาภารกิจ! ⏰";
+                resStatus.innerText = "ยังไม่ผ่านเป้าหมาย ⚡";
+                resStatus.className = "text-sm font-bold text-amber-400";
+                resIconBg.innerHTML = "👨‍🚒";
+            }
+
+            gameoverModal.classList.remove('hidden');
+        }
+
+        /* BUTTON & UI EVENT BINDINGS */
+        btnStart.addEventListener('click', () => {
+            sound.init();
+            setupCamera();
+            startGame();
+        });
+
+        btnHowTo.addEventListener('click', () => {
+            howtoModal.classList.remove('hidden');
+        });
+
+        btnCloseHowTo.addEventListener('click', () => {
+            howtoModal.classList.add('hidden');
+        });
+
+        btnUnderstood.addEventListener('click', () => {
+            howtoModal.classList.add('hidden');
+        });
+
+        btnRestart.addEventListener('click', () => {
+            startGame();
+        });
+
+        btnSoundToggle.addEventListener('click', () => {
+            const isEnabled = sound.toggleSound();
+            document.getElementById('sound-icon').className = isEnabled 
+                ? 'fa-solid fa-volume-high text-lg' 
+                : 'fa-solid fa-volume-xmark text-lg text-red-400';
+        });
+
+        btnCameraToggle.addEventListener('click', () => {
+            const newMode = gameState.controlMode === 'camera' ? 'mouse' : 'camera';
+            switchControlMode(newMode);
+        });
+
+        // Initialize Animation Loop
+        window.onload = () => {
+            animate();
+        };
+    </script>
+</body>
+</html>
